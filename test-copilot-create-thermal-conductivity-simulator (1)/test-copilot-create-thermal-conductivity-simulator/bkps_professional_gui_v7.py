@@ -597,6 +597,14 @@ class BKPSProfessionalGUI_V7(QMainWindow):
         self.height_spin.setToolTip("Domain height")
         geom_layout.addRow("Height:", self.height_spin)
         
+        self.pipe_diameter_spin = QDoubleSpinBox()
+        self.pipe_diameter_spin.setRange(0.001, 1)
+        self.pipe_diameter_spin.setValue(0.01)
+        self.pipe_diameter_spin.setSuffix(" m")
+        self.pipe_diameter_spin.setDecimals(4)
+        self.pipe_diameter_spin.setToolTip("Pipe diameter (for pipe geometry)")
+        geom_layout.addRow("Pipe Diameter:", self.pipe_diameter_spin)
+        
         self.geom_group.setLayout(geom_layout)
         self.geom_group.setVisible(False)
         scroll_layout.addWidget(self.geom_group)
@@ -1146,10 +1154,14 @@ class BKPSProfessionalGUI_V7(QMainWindow):
     def _get_geometry_config(self) -> 'GeometryConfig':
         """Build geometry configuration from UI"""
         from nanofluid_simulator import GeometryConfig
+        
+        geom_type = self.geom_type_combo.currentText()
+        
         return GeometryConfig(
-            geometry_type=self.geom_type_combo.currentText(),
+            geometry_type=geom_type,
             length=self.length_spin.value(),
-            height=self.height_spin.value()
+            height=self.height_spin.value(),
+            diameter=self.pipe_diameter_spin.value() if geom_type == "pipe" else None
         )
     
     def _get_mesh_config(self) -> 'MeshConfig':

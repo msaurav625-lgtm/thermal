@@ -594,11 +594,23 @@ class BKPSNanofluidEngine:
         if not self._cfd_solver:
             raise RuntimeError("CFD solver not initialized")
         
-        # Get nanofluid properties
-        mu_nf = self._simulator.calculate_nanofluid_viscosity()
-        rho_nf = self._simulator.calculate_nanofluid_density()
+        # Get nanofluid properties using correct method names
+        mu_result = self._simulator.calculate_viscosity()
+        mu_nf = mu_result[0] if isinstance(mu_result, tuple) else mu_result
+        
+        # Calculate or estimate other properties
         k_nf = self._simulator.calculate_static_thermal_conductivity()
-        cp_nf = self._simulator.calculate_nanofluid_specific_heat()
+        
+        # Estimate density (mixture rule)
+        phi_total = sum(c.volume_fraction for c in self._simulator.components)
+        rho_bf = self._simulator.rho_bf
+        rho_p = self._simulator.components[0].rho_particle if self._simulator.components else 3970
+        rho_nf = phi_total * rho_p + (1 - phi_total) * rho_bf
+        
+        # Estimate specific heat (mixture rule)
+        cp_bf = self._simulator.cp_bf
+        cp_p = self._simulator.components[0].cp_particle if self._simulator.components else 880
+        cp_nf = (phi_total * rho_p * cp_p + (1 - phi_total) * rho_bf * cp_bf) / rho_nf
         
         # Set properties in solver
         self._cfd_solver.set_fluid_properties(
