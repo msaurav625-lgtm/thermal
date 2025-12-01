@@ -620,34 +620,64 @@ class BKPSNanofluidEngine:
             specific_heat=cp_nf
         )
         
-        # Solve flow field
-        logger.info("Solving Navier-Stokes equations...")
-        velocity_field = self._cfd_solver.solve_momentum(
-            max_iter=self.config.solver.max_iterations,
-            tolerance=self.config.solver.convergence_tolerance,
-            relaxation=self.config.solver.relaxation_factor
+        # Set boundary conditions (example - inlet/outlet)
+        from nanofluid_simulator.cfd_solver import BoundaryType, BoundaryCondition
+        
+        # Inlet velocity (left boundary)
+        inlet_velocity = self.config.flow.velocity if self.config.flow else 1.0
+        self._cfd_solver.set_boundary_condition(
+            BoundaryType.INLET,
+            BoundaryCondition(
+                bc_type='dirichlet',
+                value={'u': inlet_velocity, 'v': 0.0}
+            )
+        )
+        
+        # Outlet pressure (right boundary)
+        self._cfd_solver.set_boundary_condition(
+            BoundaryType.OUTLET,
+            BoundaryCondition(
+                bc_type='neumann',
+                value={'u': 0.0, 'v': 0.0, 'p': 0.0}
+            )
+        )
+        
+        # Wall boundaries (top/bottom)
+        self._cfd_solver.set_boundary_condition(
+            BoundaryType.WALL,
+            BoundaryCondition(
+                bc_type='no_slip',
+                value={'u': 0.0, 'v': 0.0}
+            )
         )
         
         if progress_callback:
-            progress_callback(50)
+            progress_callback(20)
         
-        # Solve temperature field if heat transfer enabled
-        temperature_field = None
-        if self.config.flow.wall_temperature or self.config.flow.heat_flux:
-            logger.info("Solving energy equation...")
-            temperature_field = self._cfd_solver.solve_energy(
-                velocity_field=velocity_field,
-                max_iter=self.config.solver.max_iterations,
-                tolerance=self.config.solver.convergence_tolerance
-            )
+        # Solve using SIMPLE algorithm
+        logger.info("Running SIMPLE algorithm for coupled Navier-Stokes equations...")
+        converged = self._cfd_solver.solve(
+            max_iterations=self.config.solver.max_iterations,
+            verbose=True
+        )
+        
+        if progress_callback:
+            progress_callback(80)
+        
+        # Get converged results
+        flow_field = self._cfd_solver.get_results()
         
         if progress_callback:
             progress_callback(100)
         
         results = {
-            'velocity_field': velocity_field,
-            'temperature_field': temperature_field,
+            'converged': converged,
+            'velocity_u': flow_field.u,
+            'velocity_v': flow_field.v,
+            'pressure': flow_field.p,
+            'temperature': flow_field.T,
             'mesh': self._cfd_solver.mesh,
+            'residuals': self._cfd_solver.residuals,
             'properties': {
                 'mu_nf': mu_nf,
                 'rho_nf': rho_nf,
