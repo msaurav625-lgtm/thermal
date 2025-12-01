@@ -638,10 +638,10 @@ class BKPSNanofluidEngine:
             cp=cp_nf,
             inlet_velocity=inlet_velocity,
             inlet_temperature=inlet_temp,
-            max_iterations=max(200, self.config.solver.max_iterations),  # At least 200 for stability
-            dt=0.0005,  # Stable time step
-            alpha=0.6,  # Under-relaxation for stability
-            tolerance=0.01  # Relaxed for CFD
+            max_iterations=min(250, max(200, self.config.solver.max_iterations)),
+            dt=0.0001,  # Optimal time step
+            alpha=0.3,  # Conservative under-relaxation
+            tolerance=0.01
         )
         
         if progress_callback:

@@ -31,9 +31,9 @@ class SimpleCFDConfig:
     
     # Solver settings
     max_iterations: int = 200
-    dt: float = 0.0001  # Time step for pseudo-transient
+    dt: float = 0.0001  # Smaller time step for accuracy
     tolerance: float = 1e-3  # Relaxed tolerance
-    alpha: float = 0.5  # Under-relaxation factor
+    alpha: float = 0.3  # Lower under-relaxation for stability
 
 
 class SimpleCFDSolver:
@@ -74,15 +74,17 @@ class SimpleCFDSolver:
     
     def apply_boundary_conditions(self):
         """Apply boundary conditions on all fields"""
-        # Inlet (left): fixed velocity
+        # Inlet (left): fixed velocity and reference pressure
         self.u[0, :] = self.config.inlet_velocity
         self.v[0, :] = 0.0
         self.T[0, :] = self.config.inlet_temperature
+        # Inlet pressure: zero gradient (natural for inlet)
+        self.p[0, :] = self.p[1, :]
         
-        # Outlet (right): zero gradient
+        # Outlet (right): zero gradient for velocity, zero reference for pressure
         self.u[-1, :] = self.u[-2, :]
         self.v[-1, :] = self.v[-2, :]
-        self.p[-1, :] = 0.0  # Reference pressure
+        self.p[-1, :] = 0.0  # Reference pressure at outlet
         self.T[-1, :] = self.T[-2, :]
         
         # Walls (top/bottom): no-slip
@@ -101,6 +103,10 @@ class SimpleCFDSolver:
         dx, dy = self.dx, self.dy
         rho = self.config.rho
         mu = self.config.mu
+        
+        # Copy current velocities
+        self.u_star[:, :] = self.u
+        self.v_star[:, :] = self.v
         
         # Interior points only
         for i in range(1, nx-1):
@@ -124,8 +130,8 @@ class SimpleCFDSolver:
                 d2udy2 = (self.u[i, j+1] - 2*self.u[i, j] + self.u[i, j-1]) / dy**2
                 diff_u = mu / rho * (d2udx2 + d2udy2)
                 
-                # Predictor with smaller factor for stability
-                self.u_star[i, j] = self.u[i, j] + 0.5 * dt * (-conv_u + diff_u)
+                # Predictor (explicit Euler)
+                self.u_star[i, j] = self.u[i, j] + dt * (-conv_u + diff_u)
                 
                 # V-momentum
                 if self.u[i, j] > 0:
@@ -144,37 +150,38 @@ class SimpleCFDSolver:
                 d2vdy2 = (self.v[i, j+1] - 2*self.v[i, j] + self.v[i, j-1]) / dy**2
                 diff_v = mu / rho * (d2vdx2 + d2vdy2)
                 
-                self.v_star[i, j] = self.v[i, j] + 0.5 * dt * (-conv_v + diff_v)
+                self.v_star[i, j] = self.v[i, j] + dt * (-conv_v + diff_v)
     
     def pressure_poisson(self):
-        """Solve pressure Poisson equation using Jacobi iteration"""
+        """Solve pressure Poisson equation using SOR (Successive Over-Relaxation)"""
         nx, ny = self.config.nx, self.config.ny
         dt = self.config.dt
         dx, dy = self.dx, self.dy
         rho = self.config.rho
+        omega = 1.5  # SOR relaxation parameter (1 < omega < 2)
         
-        p_new = self.p.copy()
-        
-        # Jacobi iterations (fast for our small mesh)
-        for _ in range(50):
+        # SOR iterations
+        for _ in range(100):
             for i in range(1, nx-1):
                 for j in range(1, ny-1):
                     # RHS: divergence of predicted velocity
                     div_u = (self.u_star[i+1, j] - self.u_star[i-1, j]) / (2*dx) + \
                             (self.v_star[i, j+1] - self.v_star[i, j-1]) / (2*dy)
                     
-                    # Poisson equation
-                    p_new[i, j] = ((p_new[i+1, j] + p_new[i-1, j]) / dx**2 + \
-                                   (p_new[i, j+1] + p_new[i, j-1]) / dy**2 - \
-                                   rho / dt * div_u) / (2/dx**2 + 2/dy**2)
+                    # Poisson equation (Gauss-Seidel update)
+                    p_gs = ((self.p[i+1, j] + self.p[i-1, j]) / dx**2 + \
+                            (self.p[i, j+1] + self.p[i, j-1]) / dy**2 - \
+                            rho / dt * div_u) / (2/dx**2 + 2/dy**2)
+                    
+                    # SOR update
+                    self.p[i, j] = (1 - omega) * self.p[i, j] + omega * p_gs
+                    self.p[i, j] = (1 - omega) * self.p[i, j] + omega * p_gs
             
             # Boundary conditions for pressure
-            p_new[0, :] = p_new[1, :]   # Inlet: zero gradient
-            p_new[-1, :] = 0.0           # Outlet: reference
-            p_new[:, 0] = p_new[:, 1]   # Walls: zero gradient
-            p_new[:, -1] = p_new[:, -2]
-        
-        self.p = p_new
+            self.p[0, :] = self.p[1, :]   # Inlet: zero gradient
+            self.p[-1, :] = 0.0            # Outlet: reference
+            self.p[:, 0] = self.p[:, 1]    # Walls: zero gradient
+            self.p[:, -1] = self.p[:, -2]
     
     def velocity_correction(self):
         """Correct velocity to satisfy continuity"""
@@ -182,6 +189,7 @@ class SimpleCFDSolver:
         dt = self.config.dt
         dx, dy = self.dx, self.dy
         rho = self.config.rho
+        alpha = self.config.alpha
         
         for i in range(1, nx-1):
             for j in range(1, ny-1):
@@ -189,10 +197,11 @@ class SimpleCFDSolver:
                 dpdx = (self.p[i+1, j] - self.p[i-1, j]) / (2*dx)
                 dpdy = (self.p[i, j+1] - self.p[i, j-1]) / (2*dy)
                 
-                # Velocity correction with under-relaxation
-                alpha = self.config.alpha
+                # Velocity correction
                 u_new = self.u_star[i, j] - dt / rho * dpdx
                 v_new = self.v_star[i, j] - dt / rho * dpdy
+                
+                # Under-relaxation
                 self.u[i, j] = alpha * u_new + (1 - alpha) * self.u[i, j]
                 self.v[i, j] = alpha * v_new + (1 - alpha) * self.v[i, j]
     
@@ -257,10 +266,11 @@ class SimpleCFDSolver:
             
             # Projection method steps
             self.momentum_prediction()
+            self.apply_boundary_conditions()  # Apply BCs to predictor
             self.pressure_poisson()
             self.velocity_correction()
+            self.apply_boundary_conditions()  # Apply BCs after correction
             self.energy_equation()
-            self.apply_boundary_conditions()
             
             # Check convergence
             residual = self.compute_residual()
@@ -297,6 +307,7 @@ class SimpleCFDSolver:
         # Average quantities
         avg_u = np.mean(self.u[1:-1, 1:-1])
         max_u = np.max(self.u)
+        # Pressure drop: inlet - outlet (high to low pressure)
         pressure_drop = np.mean(self.p[0, :]) - np.mean(self.p[-1, :])
         avg_T = np.mean(self.T[1:-1, 1:-1])
         
