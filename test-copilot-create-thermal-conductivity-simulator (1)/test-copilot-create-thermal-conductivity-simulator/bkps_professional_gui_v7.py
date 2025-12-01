@@ -2179,7 +2179,7 @@ class BKPSProfessionalGUI_V7(QMainWindow):
                     self.pressure_spin.setValue(value)
                 
                 # Build config and run
-                config = self._build_config()
+                config = self._ui_to_config()
                 engine = BKPSNanofluidEngine(config)
                 result = engine.run()
                 
