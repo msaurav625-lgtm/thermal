@@ -1,0 +1,51 @@
+================================================================================
+BKPS NFL THERMAL v6.0 - VALIDATION REPORT
+================================================================================
+
+SUMMARY:
+  Datasets validated: 6
+  Total data points: 22
+  Overall MAE: 14.93%
+  Overall R²: -3.1455
+  Predictions within ±10%: 40.9%
+  Predictions within ±20%: 72.7%
+
+DETAILED RESULTS BY DATASET:
+--------------------------------------------------------------------------------
+
+Dataset: Pak & Cho, Exp. Heat Transfer, 11:151-170 (1998)
+  MAE: 7.21%
+  RMSE: 10.46%
+  R²: -9.3970
+  MAPE: 71.22%
+
+Dataset: Lee et al., J. Heat Transfer, 121:280-289 (1999)
+  MAE: 10.07%
+  RMSE: 13.27%
+  R²: -24.4528
+  MAPE: 141.96%
+
+Dataset: Eastman et al., Appl. Phys. Lett., 78:718-720 (2001)
+  MAE: 39.10%
+  RMSE: 39.10%
+  R²: 0.0000
+  MAPE: 97.75%
+
+Dataset: Xuan & Li, Int. J. Heat Fluid Flow, 21:58-64 (2003)
+  MAE: 9.86%
+  RMSE: 10.92%
+  R²: -0.9820
+  MAPE: 45.62%
+
+Dataset: Das et al., J. Heat Transfer, 125:567-574 (2003)
+  MAE: 26.76%
+  RMSE: 31.63%
+  R²: -35.0489
+  MAPE: 159.94%
+
+Dataset: Multiple sources compilation
+  MAE: 10.84%
+  RMSE: 15.68%
+  R²: -8.1247
+  MAPE: 66.25%
+
