@@ -23,6 +23,7 @@ class ValidationDataset:
     temperature: float  # K (single value or reference)
     phi_values: np.ndarray  # Volume fractions
     k_enhancement_exp: np.ndarray  # Experimental % enhancement
+    shape: str = 'sphere'  # Particle shape used in experiments
     temp_dependent: bool = False
     temp_values: np.ndarray = None  # For temperature-dependent data
 
@@ -174,7 +175,7 @@ class ValidationCenter:
                             material=dataset.material,
                             volume_fraction=dataset.phi_values[0],
                             diameter=dataset.diameter,
-                            shape=engine.config.nanoparticles[0].shape
+                            shape=dataset.shape  # Use dataset's experimental shape
                         )
                     ],
                     enable_dlvo=engine.config.enable_dlvo,
@@ -224,7 +225,7 @@ class ValidationCenter:
                             material=dataset.material,
                             volume_fraction=phi,
                             diameter=dataset.diameter,
-                            shape=engine.config.nanoparticles[0].shape
+                            shape=dataset.shape  # Use dataset's experimental shape
                         )
                     ],
                     enable_dlvo=engine.config.enable_dlvo,
