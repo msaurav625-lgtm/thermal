@@ -681,7 +681,8 @@ class BKPSNanofluidEngine:
         
         converged = self._cfd_solver.solve(
             max_iterations=max_iter,
-            verbose=True
+            verbose=True,
+            progress_callback=progress_callback
         )
         
         if progress_callback:

@@ -634,7 +634,7 @@ class NavierStokesSolver:
         
         return res_T
     
-    def solve(self, max_iterations: int = None, verbose: bool = True) -> bool:
+    def solve(self, max_iterations: int = None, verbose: bool = True, progress_callback=None) -> bool:
         """
         Run SIMPLE algorithm to solve coupled Navier-Stokes equations.
         
@@ -644,6 +644,8 @@ class NavierStokesSolver:
             Maximum iterations (overrides settings)
         verbose : bool, optional
             Print convergence information (default: True)
+        progress_callback : callable, optional
+            Callback function(iteration, max_iter, residual) for progress updates
             
         Returns
         -------
@@ -663,6 +665,11 @@ class NavierStokesSolver:
             print()
         
         for iteration in range(max_iterations):
+            # Update progress every 5 iterations
+            if progress_callback and iteration % 5 == 0:
+                progress = 15 + int(70 * iteration / max_iterations)  # 15% to 85%
+                progress_callback(progress)
+            
             # SIMPLE algorithm steps
             
             # 1. Solve momentum equations
