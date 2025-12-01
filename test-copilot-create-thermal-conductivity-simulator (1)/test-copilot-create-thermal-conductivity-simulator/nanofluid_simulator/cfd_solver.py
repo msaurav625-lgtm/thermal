@@ -398,9 +398,31 @@ class NavierStokesSolver:
         # Select velocity component
         vel = self.field.u if direction == 'u' else self.field.v
         
+        # Track boundary cells to apply BCs after assembly
+        boundary_cells = {}
+        
         for cell in self.mesh.cells:
             i = cell.id
             
+            # Check if this cell is on a boundary
+            is_boundary_cell = False
+            for face_id in cell.faces:
+                face = self.mesh.faces[face_id]
+                if face.neighbor is None and face.boundary_type in self.boundary_conditions:
+                    bc = self.boundary_conditions[face.boundary_type]
+                    if bc.velocity is not None:
+                        bc_vel = bc.velocity[0] if direction == 'u' else bc.velocity[1]
+                        boundary_cells[i] = bc_vel
+                        is_boundary_cell = True
+                        break
+            
+            # For boundary cells, set identity equation: u[i] = bc_value
+            if is_boundary_cell:
+                A[i, i] = 1.0
+                b[i] = boundary_cells[i]
+                continue
+            
+            # For internal cells, assemble momentum equation
             # Temporal term (implicit Euler): ρV/Δt
             A[i, i] += self.field.rho[i] * cell.area / self.settings.time_step
             b[i] += self.field.rho[i] * cell.area * vel[i] / self.settings.time_step
@@ -409,7 +431,7 @@ class NavierStokesSolver:
             for face_id in cell.faces:
                 face = self.mesh.faces[face_id]
                 
-                # Skip boundary faces (handled separately)
+                # Skip boundary faces - internal cells only
                 if face.neighbor is None:
                     continue
                 
@@ -457,12 +479,13 @@ class NavierStokesSolver:
                     else:
                         A[i, j] -= mdot
             
-            # Pressure gradient term
-            grad_p_x, grad_p_y = self.compute_gradient(self.field.p)
-            if direction == 'u':
-                b[i] -= grad_p_x[i] * cell.area
-            else:
-                b[i] -= grad_p_y[i] * cell.area
+            # Pressure gradient term (skip if pressure field is all zeros to avoid numerical issues)
+            if np.max(np.abs(self.field.p)) > 1e-10:
+                grad_p_x, grad_p_y = self.compute_gradient(self.field.p)
+                if direction == 'u':
+                    b[i] -= grad_p_x[i] * cell.area
+                else:
+                    b[i] -= grad_p_y[i] * cell.area
         
         return A.tocsr(), b
     
