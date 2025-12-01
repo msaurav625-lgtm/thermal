@@ -189,6 +189,15 @@ from .cfd_visualization_enhanced import (
     run_quick_cfd_visualization,
 )
 
+# NEW in v7.1: Advanced Flow-Dependent Calculator
+from .advanced_flow_calculator import (
+    AdvancedFlowCalculator,
+    FlowDependentConfig,
+    NanoparticleSpec,
+    FlowConditions,
+    calculate_flow_properties,
+)
+
 __version__ = "7.1.0"
 __author__ = "Dedicated to Brijesh Kumar Pandey"
 __license__ = "MIT"
@@ -318,4 +327,11 @@ __all__ = [
     "RealTimeCFDVisualizer",
     "CFDVisualizationResult",
     "run_quick_cfd_visualization",
+    
+    # NEW in v7.1: Advanced Flow-Dependent Calculator
+    "AdvancedFlowCalculator",
+    "FlowDependentConfig",
+    "NanoparticleSpec",
+    "FlowConditions",
+    "calculate_flow_properties",
 ]
