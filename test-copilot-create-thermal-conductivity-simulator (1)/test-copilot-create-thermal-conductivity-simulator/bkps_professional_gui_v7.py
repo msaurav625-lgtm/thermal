@@ -63,6 +63,14 @@ from nanofluid_simulator import BKPSNanofluidEngine, UnifiedConfig, SimulationMo
 from nanofluid_simulator.pdf_report import PDFReportGenerator
 from nanofluid_simulator.validation_center import ValidationCenter, get_validation_summary
 from nanofluid_simulator.advanced_visualization import AdvancedVisualizer, create_sample_cfd_field
+# Import v7.1 advanced flow calculator
+from nanofluid_simulator import (
+    AdvancedFlowCalculator, 
+    FlowDependentConfig, 
+    NanoparticleSpec, 
+    FlowConditions,
+    calculate_flow_properties
+)
 
 
 class ComputationThread(QThread):
@@ -217,6 +225,7 @@ class BKPSProfessionalGUI_V7(QMainWindow):
         
         # Create tabs
         self._create_config_tab()
+        self._create_flow_calculator_tab()  # New v7.1 advanced flow calculator
         self._create_parametric_tab()
         self._create_results_tab()
         self._create_visualization_tab()
@@ -635,6 +644,448 @@ class BKPSProfessionalGUI_V7(QMainWindow):
         self.geom_group.setVisible(is_flow)
         
         self._log(f"Mode changed to {mode}")
+    
+    
+    def _create_flow_calculator_tab(self):
+        """Create advanced flow-dependent calculator tab (v7.1 feature)"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        # Title
+        title = QLabel("🌊 Advanced Flow-Dependent Property Calculator")
+        title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        title.setStyleSheet("color: #2196F3; padding: 10px;")
+        layout.addWidget(title)
+        
+        # Scroll area for all controls
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        
+        # === Base Fluid Configuration ===
+        base_group = QGroupBox("Base Fluid")
+        base_layout = QFormLayout()
+        
+        self.flow_base_fluid_combo = QComboBox()
+        self.flow_base_fluid_combo.addItems(["Water", "EG", "EG-Water"])
+        base_layout.addRow("Base Fluid:", self.flow_base_fluid_combo)
+        
+        base_group.setLayout(base_layout)
+        scroll_layout.addWidget(base_group)
+        
+        # === Nanoparticles Table ===
+        np_group = QGroupBox("Nanoparticles (0, 1, or Multiple)")
+        np_layout = QVBoxLayout()
+        
+        # Table for nanoparticles
+        self.flow_np_table = QTableWidget(0, 6)
+        self.flow_np_table.setHorizontalHeaderLabels([
+            "Enabled", "Material", "φ (min-max-steps)", "d (nm)", "Shape", ""
+        ])
+        self.flow_np_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.flow_np_table.setMaximumHeight(200)
+        np_layout.addWidget(self.flow_np_table)
+        
+        # Add/Remove buttons
+        np_buttons = QHBoxLayout()
+        add_np_btn = QPushButton("+ Add Nanoparticle")
+        add_np_btn.clicked.connect(self._add_flow_nanoparticle_row)
+        remove_np_btn = QPushButton("- Remove Selected")
+        remove_np_btn.clicked.connect(self._remove_flow_nanoparticle_row)
+        np_buttons.addWidget(add_np_btn)
+        np_buttons.addWidget(remove_np_btn)
+        np_buttons.addStretch()
+        np_layout.addLayout(np_buttons)
+        
+        np_group.setLayout(np_layout)
+        scroll_layout.addWidget(np_group)
+        
+        # === Flow Conditions ===
+        flow_group = QGroupBox("Flow Conditions")
+        flow_layout = QFormLayout()
+        
+        # Temperature
+        self.flow_temp_spin = QDoubleSpinBox()
+        self.flow_temp_spin.setRange(273, 400)
+        self.flow_temp_spin.setValue(300)
+        self.flow_temp_spin.setSuffix(" K")
+        flow_layout.addRow("Temperature:", self.flow_temp_spin)
+        
+        # Pressure
+        self.flow_pressure_spin = QDoubleSpinBox()
+        self.flow_pressure_spin.setRange(1e4, 1e7)
+        self.flow_pressure_spin.setValue(101325)
+        self.flow_pressure_spin.setSuffix(" Pa")
+        flow_layout.addRow("Pressure:", self.flow_pressure_spin)
+        
+        # Velocity (with range option)
+        velocity_layout = QHBoxLayout()
+        self.flow_velocity_min_spin = QDoubleSpinBox()
+        self.flow_velocity_min_spin.setRange(0.001, 10)
+        self.flow_velocity_min_spin.setValue(0.1)
+        self.flow_velocity_min_spin.setSuffix(" m/s")
+        self.flow_velocity_max_spin = QDoubleSpinBox()
+        self.flow_velocity_max_spin.setRange(0.001, 10)
+        self.flow_velocity_max_spin.setValue(0.1)
+        self.flow_velocity_max_spin.setSuffix(" m/s")
+        self.flow_velocity_steps_spin = QSpinBox()
+        self.flow_velocity_steps_spin.setRange(1, 100)
+        self.flow_velocity_steps_spin.setValue(1)
+        velocity_layout.addWidget(QLabel("Min:"))
+        velocity_layout.addWidget(self.flow_velocity_min_spin)
+        velocity_layout.addWidget(QLabel("Max:"))
+        velocity_layout.addWidget(self.flow_velocity_max_spin)
+        velocity_layout.addWidget(QLabel("Steps:"))
+        velocity_layout.addWidget(self.flow_velocity_steps_spin)
+        flow_layout.addRow("Velocity Range:", velocity_layout)
+        
+        # Shear rate (optional)
+        self.flow_shear_spin = QDoubleSpinBox()
+        self.flow_shear_spin.setRange(0, 100000)
+        self.flow_shear_spin.setValue(0)
+        self.flow_shear_spin.setSuffix(" 1/s")
+        flow_layout.addRow("Shear Rate (optional):", self.flow_shear_spin)
+        
+        flow_group.setLayout(flow_layout)
+        scroll_layout.addWidget(flow_group)
+        
+        # === Model Selection ===
+        model_group = QGroupBox("Model Selection")
+        model_layout = QVBoxLayout()
+        
+        # Thermal conductivity models
+        k_label = QLabel("<b>Thermal Conductivity Models:</b>")
+        model_layout.addWidget(k_label)
+        
+        self.flow_k_model_checks = {}
+        k_models = ["Static", "Buongiorno", "Kumar", "Rea-Guzman"]
+        k_row = QHBoxLayout()
+        for model in k_models:
+            check = QCheckBox(model)
+            check.setChecked(model == "Buongiorno")  # Default
+            self.flow_k_model_checks[model] = check
+            k_row.addWidget(check)
+        k_row.addStretch()
+        model_layout.addLayout(k_row)
+        
+        # Viscosity models
+        mu_label = QLabel("<b>Viscosity Models:</b>")
+        model_layout.addWidget(mu_label)
+        
+        self.flow_mu_model_checks = {}
+        mu_models = ["Einstein", "Brinkman", "Batchelor", "Shear-dependent"]
+        mu_row = QHBoxLayout()
+        for model in mu_models:
+            check = QCheckBox(model)
+            check.setChecked(model == "Brinkman")  # Default
+            self.flow_mu_model_checks[model] = check
+            mu_row.addWidget(check)
+        mu_row.addStretch()
+        model_layout.addLayout(mu_row)
+        
+        model_group.setLayout(model_layout)
+        scroll_layout.addWidget(model_group)
+        
+        # === Calculation Options ===
+        calc_group = QGroupBox("Calculation Options")
+        calc_layout = QVBoxLayout()
+        
+        self.flow_mode_combo = QComboBox()
+        self.flow_mode_combo.addItems([
+            "Single Calculation",
+            "Volume Fraction Sweep",
+            "Velocity Sweep",
+            "Temperature Sweep",
+            "Diameter Sweep",
+            "Multi-dimensional Sweep",
+            "Material Comparison"
+        ])
+        calc_layout.addWidget(QLabel("Calculation Mode:"))
+        calc_layout.addWidget(self.flow_mode_combo)
+        
+        calc_group.setLayout(calc_layout)
+        scroll_layout.addWidget(calc_group)
+        
+        # === Calculate Button ===
+        calc_btn = QPushButton("🚀 Calculate Flow Properties")
+        calc_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        calc_btn.clicked.connect(self._run_flow_calculator)
+        scroll_layout.addWidget(calc_btn)
+        
+        # === Results Display ===
+        results_group = QGroupBox("Results")
+        results_layout = QVBoxLayout()
+        
+        self.flow_results_table = QTableWidget(0, 6)
+        self.flow_results_table.setHorizontalHeaderLabels([
+            "Material", "φ (%)", "V (m/s)", "k (W/m·K)", "μ (mPa·s)", "Enhancement (%)"
+        ])
+        self.flow_results_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        results_layout.addWidget(self.flow_results_table)
+        
+        # Export button
+        export_btn = QPushButton("📊 Export Results to CSV")
+        export_btn.clicked.connect(self._export_flow_results)
+        results_layout.addWidget(export_btn)
+        
+        results_group.setLayout(results_layout)
+        scroll_layout.addWidget(results_group)
+        
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
+        
+        self.tabs.addTab(tab, "Flow Calculator")
+    
+    def _add_flow_nanoparticle_row(self):
+        """Add a row to the nanoparticle table"""
+        row = self.flow_np_table.rowCount()
+        self.flow_np_table.insertRow(row)
+        
+        # Enabled checkbox
+        enabled_check = QCheckBox()
+        enabled_check.setChecked(True)
+        self.flow_np_table.setCellWidget(row, 0, enabled_check)
+        
+        # Material combo
+        material_combo = QComboBox()
+        material_combo.addItems([
+            "Al2O3", "CuO", "TiO2", "SiO2", "ZnO", "Fe3O4",
+            "Cu", "Ag", "Au", "CNT", "Graphene"
+        ])
+        self.flow_np_table.setCellWidget(row, 1, material_combo)
+        
+        # Volume fraction (format: "min-max-steps" or single value)
+        vf_edit = QLineEdit("0.02")
+        vf_edit.setPlaceholderText("0.02 or 0.01-0.05-10")
+        self.flow_np_table.setCellWidget(row, 2, vf_edit)
+        
+        # Diameter
+        d_spin = QDoubleSpinBox()
+        d_spin.setRange(1, 500)
+        d_spin.setValue(30)
+        d_spin.setSuffix(" nm")
+        self.flow_np_table.setCellWidget(row, 3, d_spin)
+        
+        # Shape combo
+        shape_combo = QComboBox()
+        shape_combo.addItems(["Sphere", "Cylinder", "Platelet"])
+        self.flow_np_table.setCellWidget(row, 4, shape_combo)
+        
+        # Remove button
+        remove_btn = QPushButton("×")
+        remove_btn.clicked.connect(lambda: self.flow_np_table.removeRow(
+            self.flow_np_table.indexAt(remove_btn.pos()).row()
+        ))
+        self.flow_np_table.setCellWidget(row, 5, remove_btn)
+    
+    def _remove_flow_nanoparticle_row(self):
+        """Remove selected row from nanoparticle table"""
+        current_row = self.flow_np_table.currentRow()
+        if current_row >= 0:
+            self.flow_np_table.removeRow(current_row)
+    
+    def _run_flow_calculator(self):
+        """Run the advanced flow calculator with user configuration"""
+        try:
+            # Build configuration
+            base_fluid = self.flow_base_fluid_combo.currentText()
+            
+            # Build nanoparticle specs
+            nanoparticles = []
+            for row in range(self.flow_np_table.rowCount()):
+                enabled_check = self.flow_np_table.cellWidget(row, 0)
+                if not enabled_check.isChecked():
+                    continue  # Skip disabled nanoparticles
+                
+                material_combo = self.flow_np_table.cellWidget(row, 1)
+                vf_edit = self.flow_np_table.cellWidget(row, 2)
+                d_spin = self.flow_np_table.cellWidget(row, 3)
+                shape_combo = self.flow_np_table.cellWidget(row, 4)
+                
+                # Parse volume fraction (single or range)
+                vf_text = vf_edit.text().strip()
+                if '-' in vf_text:
+                    parts = vf_text.split('-')
+                    if len(parts) == 3:
+                        vf = (float(parts[0]), float(parts[1]), int(parts[2]))
+                    else:
+                        vf = float(vf_text.split('-')[0])
+                else:
+                    vf = float(vf_text)
+                
+                np_spec = NanoparticleSpec(
+                    material=material_combo.currentText(),
+                    volume_fraction=vf,
+                    diameter=d_spin.value() * 1e-9,  # nm to m
+                    shape_factor=3.0 if shape_combo.currentText() == "Sphere" else 6.0,
+                    enabled=True
+                )
+                nanoparticles.append(np_spec)
+            
+            # Build flow conditions
+            velocity_min = self.flow_velocity_min_spin.value()
+            velocity_max = self.flow_velocity_max_spin.value()
+            velocity_steps = self.flow_velocity_steps_spin.value()
+            
+            if velocity_steps > 1:
+                velocity = (velocity_min, velocity_max, velocity_steps)
+            else:
+                velocity = velocity_min
+            
+            flow_conditions = FlowConditions(
+                velocity=velocity,
+                shear_rate=self.flow_shear_spin.value() if self.flow_shear_spin.value() > 0 else None,
+                temperature=self.flow_temp_spin.value(),
+                pressure=self.flow_pressure_spin.value()
+            )
+            
+            # Get selected models
+            k_models = [name.lower().replace('-', '_') 
+                       for name, check in self.flow_k_model_checks.items() 
+                       if check.isChecked()]
+            mu_models = [name.lower().replace('-', '_') 
+                        for name, check in self.flow_mu_model_checks.items() 
+                        if check.isChecked()]
+            
+            # Build config
+            config = FlowDependentConfig(
+                base_fluid=base_fluid,
+                nanoparticles=nanoparticles,
+                flow_conditions=flow_conditions,
+                conductivity_models=k_models if k_models else ['buongiorno'],
+                viscosity_models=mu_models if mu_models else ['brinkman']
+            )
+            
+            # Calculate
+            mode = self.flow_mode_combo.currentText()
+            
+            calc = AdvancedFlowCalculator(config)
+            
+            if "Comparison" in mode and len(nanoparticles) > 1:
+                results = calc.calculate_comparison()
+            elif "Sweep" in mode:
+                # For sweeps, need to configure ranges in the config
+                # The sweep is determined by which parameters have ranges
+                results = calc.calculate_parametric_sweep()
+            else:
+                # Single calculation
+                if len(nanoparticles) == 0:
+                    results = calc._base_fluid_only_results(config.flow_conditions)
+                elif len(nanoparticles) == 1:
+                    results = calc.calculate_single_condition(nanoparticles[0], config.flow_conditions)
+                else:
+                    results = calc.calculate_comparison()
+            
+            # Display results
+            self._display_flow_results(results)
+            
+            QMessageBox.information(self, "Success", 
+                                  "Flow-dependent calculations completed!")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Calculation Error", 
+                               f"Error running flow calculator:\n{str(e)}")
+    
+    def _display_flow_results(self, results: Dict):
+        """Display flow calculator results in table"""
+        self.flow_results_table.setRowCount(0)
+        
+        # Store for export
+        self.flow_results_data = results
+        
+        if 'base_fluid' in results:
+            # Single calculation
+            row = self.flow_results_table.rowCount()
+            self.flow_results_table.insertRow(row)
+            self.flow_results_table.setItem(row, 0, QTableWidgetItem("Base Fluid"))
+            self.flow_results_table.setItem(row, 1, QTableWidgetItem("0"))
+            self.flow_results_table.setItem(row, 2, QTableWidgetItem("-"))
+            self.flow_results_table.setItem(row, 3, 
+                QTableWidgetItem(f"{results['base_fluid']['k']:.4f}"))
+            self.flow_results_table.setItem(row, 4, 
+                QTableWidgetItem(f"{results['base_fluid']['mu']*1000:.4f}"))
+            self.flow_results_table.setItem(row, 5, QTableWidgetItem("0"))
+            
+            if 'nanofluid' in results:
+                for nf in results['nanofluid']:
+                    row = self.flow_results_table.rowCount()
+                    self.flow_results_table.insertRow(row)
+                    self.flow_results_table.setItem(row, 0, 
+                        QTableWidgetItem(nf.get('material', 'Nanofluid')))
+                    self.flow_results_table.setItem(row, 1, 
+                        QTableWidgetItem(f"{nf.get('volume_fraction', 0)*100:.2f}"))
+                    self.flow_results_table.setItem(row, 2, 
+                        QTableWidgetItem(f"{nf.get('velocity', 0):.3f}"))
+                    self.flow_results_table.setItem(row, 3, 
+                        QTableWidgetItem(f"{nf.get('k', 0):.4f}"))
+                    self.flow_results_table.setItem(row, 4, 
+                        QTableWidgetItem(f"{nf.get('mu', 0)*1000:.4f}"))
+                    enhancement = ((nf.get('k', 0) / results['base_fluid']['k']) - 1) * 100
+                    self.flow_results_table.setItem(row, 5, 
+                        QTableWidgetItem(f"{enhancement:.2f}"))
+        
+        elif 'sweep' in results:
+            # Parametric sweep
+            for point in results['sweep']:
+                row = self.flow_results_table.rowCount()
+                self.flow_results_table.insertRow(row)
+                self.flow_results_table.setItem(row, 0, 
+                    QTableWidgetItem(point.get('material', 'Nanofluid')))
+                self.flow_results_table.setItem(row, 1, 
+                    QTableWidgetItem(f"{point.get('volume_fraction', 0)*100:.2f}"))
+                self.flow_results_table.setItem(row, 2, 
+                    QTableWidgetItem(f"{point.get('velocity', 0):.3f}"))
+                self.flow_results_table.setItem(row, 3, 
+                    QTableWidgetItem(f"{point.get('k', 0):.4f}"))
+                self.flow_results_table.setItem(row, 4, 
+                    QTableWidgetItem(f"{point.get('mu', 0)*1000:.4f}"))
+                self.flow_results_table.setItem(row, 5, 
+                    QTableWidgetItem(f"{point.get('enhancement_k', 0):.2f}"))
+    
+    def _export_flow_results(self):
+        """Export flow calculator results to CSV"""
+        if not hasattr(self, 'flow_results_data'):
+            QMessageBox.warning(self, "No Data", "No results to export. Run calculation first.")
+            return
+        
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Flow Results", "", "CSV Files (*.csv)"
+        )
+        
+        if filename:
+            try:
+                import csv
+                with open(filename, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["Material", "φ (%)", "V (m/s)", "k (W/m·K)", 
+                                   "μ (mPa·s)", "Enhancement (%)"])
+                    
+                    for row in range(self.flow_results_table.rowCount()):
+                        row_data = []
+                        for col in range(self.flow_results_table.columnCount()):
+                            item = self.flow_results_table.item(row, col)
+                            row_data.append(item.text() if item else "")
+                        writer.writerow(row_data)
+                
+                QMessageBox.information(self, "Success", 
+                                      f"Results exported to:\n{filename}")
+            except Exception as e:
+                QMessageBox.critical(self, "Export Error", 
+                                   f"Error exporting results:\n{str(e)}")
     
     def _create_parametric_tab(self):
         """Create parametric sweep tab"""
