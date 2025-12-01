@@ -625,7 +625,12 @@ class BKPSNanofluidEngine:
         
         # Inlet velocity (left boundary)
         inlet_velocity = self.config.flow.velocity if self.config.flow else 1.0
-        inlet_temp = self.config.static.temperature if self.config.static else 300.0
+        # Get temperature from flow config or base fluid config
+        if self.config.flow and hasattr(self.config.flow, 'inlet_temperature'):
+            inlet_temp = self.config.flow.inlet_temperature
+        else:
+            inlet_temp = self.config.base_fluid.temperature
+        
         self._cfd_solver.set_boundary_condition(
             BoundaryType.INLET,
             BoundaryCondition(
