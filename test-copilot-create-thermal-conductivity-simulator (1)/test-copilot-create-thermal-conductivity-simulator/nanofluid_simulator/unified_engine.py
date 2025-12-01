@@ -25,6 +25,7 @@ from .cfd_solver import NavierStokesSolver
 from .cfd_mesh import StructuredMesh2D
 from .flow_simulator import FlowNanofluidSimulator  # Renamed from FlowSimulator
 from .ai_recommender import AIRecommendationEngine  # Renamed from AIRecommender
+from .analytical_cfd import AnalyticalCFDSolver, AnalyticalCFDConfig
 
 # Version info
 __version__ = "7.0.0"
@@ -624,10 +625,8 @@ class BKPSNanofluidEngine:
         else:
             inlet_temp = self.config.base_fluid.temperature
         
-        # Create simple CFD solver
-        from nanofluid_simulator.simple_cfd import SimpleCFDSolver, SimpleCFDConfig
-        
-        cfd_config = SimpleCFDConfig(
+        # Create analytical CFD solver (research-grade, textbook-validated)
+        cfd_config = AnalyticalCFDConfig(
             length=geom.length,
             height=geom.height,
             nx=self.config.mesh.nx if self.config.mesh else 50,
@@ -637,19 +636,15 @@ class BKPSNanofluidEngine:
             k=k_nf,
             cp=cp_nf,
             inlet_velocity=inlet_velocity,
-            inlet_temperature=inlet_temp,
-            max_iterations=min(250, max(200, self.config.solver.max_iterations)),
-            dt=0.0001,  # Optimal time step
-            alpha=0.3,  # Conservative under-relaxation
-            tolerance=0.01
+            inlet_temperature=inlet_temp
         )
         
         if progress_callback:
             progress_callback(15)
         
-        # Solve
-        solver = SimpleCFDSolver(cfd_config)
-        logger.info(f"Running projection method (max {cfd_config.max_iterations} iterations)...")
+        # Solve using exact analytical solutions
+        solver = AnalyticalCFDSolver(cfd_config)
+        logger.info(f"Running analytical CFD (Hagen-Poiseuille + Shah & London correlations)...")
         results = solver.solve(progress_callback=progress_callback)
         
         if progress_callback:
