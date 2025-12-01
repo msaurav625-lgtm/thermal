@@ -590,20 +590,15 @@ class BKPSNanofluidEngine:
         return results
     
     def _run_cfd(self, progress_callback=None) -> Dict[str, Any]:
-        """Run full CFD simulation with SIMPLE algorithm"""
-        logger.info("=== Running CFD Simulation (SIMPLE Algorithm) ===")
-        
-        if not self._cfd_solver:
-            raise RuntimeError("CFD solver not initialized")
+        """Run CFD simulation using finite difference projection method"""
+        logger.info("=== Running CFD Simulation (Finite Difference Projection Method) ===")
         
         if progress_callback:
             progress_callback(5)
         
-        # Get nanofluid properties using correct method names
+        # Get nanofluid properties
         mu_result = self._simulator.calculate_viscosity()
         mu_nf = mu_result[0] if isinstance(mu_result, tuple) else mu_result
-        
-        # Calculate or estimate other properties
         k_nf = self._simulator.calculate_static_thermal_conductivity()
         
         # Estimate density (mixture rule)
@@ -620,15 +615,8 @@ class BKPSNanofluidEngine:
         if progress_callback:
             progress_callback(10)
         
-        # Set properties in solver
-        self._cfd_solver.set_fluid_properties(
-            viscosity=mu_nf,
-            density=rho_nf,
-            thermal_conductivity=k_nf,
-            specific_heat=cp_nf
-        )
-        
         # Get geometry and flow parameters
+        geom = self.config.geometry
         inlet_velocity = self.config.flow.velocity if self.config.flow else 1.0
         
         if self.config.flow and hasattr(self.config.flow, 'inlet_temperature'):
@@ -636,83 +624,42 @@ class BKPSNanofluidEngine:
         else:
             inlet_temp = self.config.base_fluid.temperature
         
-        # Initialize field with reasonable guess
-        self._cfd_solver.initialize_field(
-            u0=inlet_velocity * 0.5,  # Start with half inlet velocity
-            v0=0.0,
-            p0=0.0,
-            T0=inlet_temp
-        )
+        # Create simple CFD solver
+        from nanofluid_simulator.simple_cfd import SimpleCFDSolver, SimpleCFDConfig
         
-        # Set boundary conditions
-        from nanofluid_simulator.cfd_solver import BoundaryType, BoundaryCondition
-        
-        self._cfd_solver.set_boundary_condition(
-            BoundaryType.INLET,
-            BoundaryCondition(
-                bc_type=BoundaryType.INLET,
-                velocity=(inlet_velocity, 0.0),
-                temperature=inlet_temp
-            )
-        )
-        
-        self._cfd_solver.set_boundary_condition(
-            BoundaryType.OUTLET,
-            BoundaryCondition(
-                bc_type=BoundaryType.OUTLET,
-                pressure=0.0
-            )
-        )
-        
-        self._cfd_solver.set_boundary_condition(
-            BoundaryType.WALL,
-            BoundaryCondition(
-                bc_type=BoundaryType.WALL,
-                velocity=(0.0, 0.0)
-            )
+        cfd_config = SimpleCFDConfig(
+            length=geom.length,
+            height=geom.height,
+            nx=self.config.mesh.nx if self.config.mesh else 50,
+            ny=self.config.mesh.ny if self.config.mesh else 50,
+            rho=rho_nf,
+            mu=mu_nf,
+            k=k_nf,
+            cp=cp_nf,
+            inlet_velocity=inlet_velocity,
+            inlet_temperature=inlet_temp,
+            max_iterations=self.config.solver.max_iterations,
+            tolerance=self.config.solver.convergence_tolerance
         )
         
         if progress_callback:
             progress_callback(15)
         
-        # Solve using SIMPLE algorithm with reduced iterations
-        max_iter = min(self.config.solver.max_iterations, 50)  # Limit to 50 for speed
-        logger.info(f"Running SIMPLE algorithm (max {max_iter} iterations)...")
-        
-        converged = self._cfd_solver.solve(
-            max_iterations=max_iter,
-            verbose=True,
-            progress_callback=progress_callback
-        )
+        # Solve
+        solver = SimpleCFDSolver(cfd_config)
+        logger.info(f"Running projection method (max {cfd_config.max_iterations} iterations)...")
+        results = solver.solve(progress_callback=progress_callback)
         
         if progress_callback:
             progress_callback(90)
         
-        # Get converged results
-        flow_field = self._cfd_solver.get_results()
+        logger.info(f"  Converged: {results['converged']}")
+        logger.info(f"  Reynolds number: {results['metrics']['reynolds_number']:.1f}")
+        logger.info(f"  Max velocity: {results['metrics']['max_velocity']:.4f} m/s")
+        logger.info(f"  Pressure drop: {results['metrics']['pressure_drop']:.2f} Pa")
         
         if progress_callback:
             progress_callback(100)
-        
-        logger.info(f"  Converged: {converged}")
-        logger.info(f"  Max velocity: {np.max(flow_field.u):.4f} m/s")
-        logger.info(f"  Pressure drop: {np.max(flow_field.p) - np.min(flow_field.p):.2f} Pa")
-        
-        results = {
-            'converged': converged,
-            'velocity_u': flow_field.u,
-            'velocity_v': flow_field.v,
-            'pressure': flow_field.p,
-            'temperature': flow_field.T,
-            'mesh': self._cfd_solver.mesh,
-            'residuals': self._cfd_solver.residuals,
-            'properties': {
-                'mu_nf': mu_nf,
-                'rho_nf': rho_nf,
-                'k_nf': k_nf,
-                'cp_nf': cp_nf
-            }
-        }
         
         return results
     
