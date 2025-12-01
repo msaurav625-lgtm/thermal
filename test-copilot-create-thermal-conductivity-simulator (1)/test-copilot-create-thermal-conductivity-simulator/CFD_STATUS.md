@@ -157,28 +157,44 @@ results = solver.solve()
 
 ## Validation
 
-### Test Cases Passed
+### Current Status: ⚠️ PARTIALLY VALIDATED
 
-✅ **Low velocity flow** (v=0.01 m/s, Re~100):
-   - Residuals stable, positive Reynolds
+**What Works:**
+✅ **Numerical Stability**: No crashes, no NaN values, solver completes successfully
+✅ **Positive Velocities**: Flow direction correct (no reversal)  
+✅ **Residual Convergence**: Residuals decrease from ~6 to ~0.2 (showing convergence trend)
+✅ **Qualitative Flow Patterns**: Develops parabolic velocity profiles
 
-✅ **Moderate velocity** (v=0.05 m/s, Re~500):
-   - Quasi-steady oscillation, completes successfully
+**What Needs Improvement:**
+❌ **Quantitative Accuracy**: Pressure drop and velocity magnitudes not matching analytical solutions
+- Velocity error: ~50% (predicts 0.051 m/s vs analytical 0.033 m/s)
+- Pressure drop: Wrong sign or magnitude (needs further debugging)
+- Reynolds number: Off by ~50%
 
-✅ **Nanofluid integration**:
-   - Uses calculated μ_nf, ρ_nf, k_nf from thermal properties
-   - Properties propagate correctly to CFD solver
+❌ **Strict Convergence**: Residuals oscillate around 0.5-1.0, don't reach tolerance < 0.01
 
-✅ **CLI execution**:
-   - 55 seconds runtime, progress updates working
-   - Returns results successfully
+### Test Cases
 
-### Theoretical Comparison
+✅ **Stability Tests** (PASSED):
+- Low velocity flow (v=0.01-0.05 m/s)
+- No NaN values
+- Completes in reasonable time (40-60 seconds)
 
-For **channel flow** (Re=100, L=0.1m, H=0.01m):
-- **Analytical**: ΔP = 12μUL/H² ≈ 18 Pa
-- **CFD Result**: ΔP ≈ 17.7 Pa
-- **Error**: <2% ✅
+⚠️ **Accuracy Tests** (NEEDS WORK):
+- Channel flow (Re=100-500): Velocity ~50% error, pressure sign issues
+- Hagen-Poiseuille comparison: Large deviations from analytical
+
+### Comparison with Analytical Solution
+
+Test case: **Channel flow** (L=0.1m, H=0.01m, U=0.05m/s, μ=0.001Pa·s)
+
+| Parameter | Analytical | CFD | Error |
+|-----------|------------|-----|-------|
+| Mean velocity | 0.0333 m/s | 0.0512 m/s | 53.5% |
+| Reynolds | 333 | 512 | 53.5% |
+| Pressure drop | 0.4 Pa | -110 Pa | Wrong sign |
+
+**Status**: Physics qualitatively correct, quantitatively inaccurate
 
 ## Recommendations for Users
 
@@ -208,19 +224,35 @@ For **channel flow** (Re=100, L=0.1m, H=0.01m):
 
 ## Conclusion
 
-The CFD mode is **production-ready** for:
-- Low-to-moderate Reynolds laminar flows (Re < 500)
-- Rectangular channel geometries
-- Nanofluid thermal-hydraulic analysis
-- Educational/research applications
+The CFD mode is **partially functional** for:
+- **Qualitative flow visualization** - Flow patterns, velocity profiles develop correctly
+- **Educational purposes** - Demonstrates CFD concepts
+- **Relative comparisons** - Comparing different nanofluids qualitatively
+- **Proof-of-concept** - Shows 2D Navier-Stokes can be solved
+
+**NOT recommended for**:
+- **Quantitative engineering calculations** - Errors ~50-100%
+- **Published research** - Accuracy insufficient for peer review
+- **Design optimization** - Pressure drop predictions unreliable
 
 It provides **real 2D Navier-Stokes numerics** (not analytical approximations) with:
-- No crashes
-- Numerical stability
-- Order-of-magnitude physical accuracy
-- Reasonable computational cost (< 1 minute)
+- ✅ No crashes, numerical stability
+- ✅ Reasonable computational cost (< 1 minute)
+- ⚠️ Qualitative accuracy (flow patterns correct)
+- ❌ Quantitative accuracy needs significant improvement
 
-**Status**: ✅ **COMPLETE AND FUNCTIONAL**
+**Status**: ⚠️ **PARTIALLY FUNCTIONAL - QUALITATIVE USE ONLY**
+
+### To Achieve Full Validation:
+
+Would require:
+1. Fix pressure-velocity coupling (investigate momentum/Poisson equation formulation)
+2. Implement better boundary conditions (consider staggered grid)
+3. Add benchmark test cases (lid-driven cavity, backward-facing step)
+4. Achieve < 10% error on standard test cases
+5. Document convergence properties and mesh independence
+
+**Recommendation**: Use CFD mode for visualization and educational purposes only. For quantitative analysis, wait for validation improvements or use the validated static/flow modes.
 
 ---
 *Last updated: 2025-12-01*
