@@ -159,15 +159,36 @@ class ValidationCenter:
         if dataset.temp_dependent:
             # Temperature sweep
             for temp, k_enh_exp in zip(dataset.temp_values, dataset.k_enhancement_exp):
-                # Update config
-                engine.config.base_fluid.temperature = temp
-                engine.config.nanoparticles[0].material = dataset.material
-                engine.config.nanoparticles[0].volume_fraction = dataset.phi_values[0]
-                engine.config.nanoparticles[0].diameter = dataset.diameter
+                # Create NEW config for this point
+                from . import UnifiedConfig, NanoparticleConfig, BaseFluidConfig, SimulationMode
+                
+                config = UnifiedConfig(
+                    mode=SimulationMode.STATIC,
+                    base_fluid=BaseFluidConfig(
+                        name=dataset.base_fluid,
+                        temperature=temp,
+                        pressure=engine.config.base_fluid.pressure
+                    ),
+                    nanoparticles=[
+                        NanoparticleConfig(
+                            material=dataset.material,
+                            volume_fraction=dataset.phi_values[0],
+                            diameter=dataset.diameter,
+                            shape=engine.config.nanoparticles[0].shape
+                        )
+                    ],
+                    enable_dlvo=engine.config.enable_dlvo,
+                    enable_non_newtonian=engine.config.enable_non_newtonian,
+                    enable_ai_recommendations=False  # Disable for speed
+                )
+                
+                # Create NEW engine for this point
+                from . import BKPSNanofluidEngine
+                point_engine = BKPSNanofluidEngine(config)
                 
                 # Run
                 try:
-                    res = engine.run()
+                    res = point_engine.run()
                     if 'static' in res:
                         k_enh_sim = res['static']['enhancement_k']
                     else:
@@ -188,16 +209,36 @@ class ValidationCenter:
         else:
             # Volume fraction sweep
             for phi, k_enh_exp in zip(dataset.phi_values, dataset.k_enhancement_exp):
-                # Update config
-                engine.config.base_fluid.name = dataset.base_fluid
-                engine.config.base_fluid.temperature = dataset.temperature
-                engine.config.nanoparticles[0].material = dataset.material
-                engine.config.nanoparticles[0].volume_fraction = phi
-                engine.config.nanoparticles[0].diameter = dataset.diameter
+                # Create NEW config for this point
+                from . import UnifiedConfig, NanoparticleConfig, BaseFluidConfig, SimulationMode
+                
+                config = UnifiedConfig(
+                    mode=SimulationMode.STATIC,
+                    base_fluid=BaseFluidConfig(
+                        name=dataset.base_fluid,
+                        temperature=dataset.temperature,
+                        pressure=engine.config.base_fluid.pressure
+                    ),
+                    nanoparticles=[
+                        NanoparticleConfig(
+                            material=dataset.material,
+                            volume_fraction=phi,
+                            diameter=dataset.diameter,
+                            shape=engine.config.nanoparticles[0].shape
+                        )
+                    ],
+                    enable_dlvo=engine.config.enable_dlvo,
+                    enable_non_newtonian=engine.config.enable_non_newtonian,
+                    enable_ai_recommendations=False  # Disable for speed
+                )
+                
+                # Create NEW engine for this point
+                from . import BKPSNanofluidEngine
+                point_engine = BKPSNanofluidEngine(config)
                 
                 # Run
                 try:
-                    res = engine.run()
+                    res = point_engine.run()
                     if 'static' in res:
                         k_enh_sim = res['static']['enhancement_k']
                     else:
