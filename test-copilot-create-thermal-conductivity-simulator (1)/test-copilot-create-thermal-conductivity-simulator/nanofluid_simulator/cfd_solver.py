@@ -194,6 +194,47 @@ class NavierStokesSolver:
                 u_ref=u_ref,
                 rho=rho
             )
+    
+    def set_fluid_properties(self,
+                            viscosity: float,
+                            density: float,
+                            thermal_conductivity: float,
+                            specific_heat: float = 4180.0):
+        """
+        Set uniform fluid properties across domain.
+        
+        Parameters
+        ----------
+        viscosity : float
+            Dynamic viscosity (Pa·s)
+        density : float
+            Density (kg/m³)
+        thermal_conductivity : float
+            Thermal conductivity (W/m·K)
+        specific_heat : float
+            Specific heat capacity (J/kg·K)
+        """
+        n_cells = self.mesh.n_cells
+        self.field.rho = np.ones(n_cells) * density
+        self.field.mu = np.ones(n_cells) * viscosity
+        self.field.k = np.ones(n_cells) * thermal_conductivity
+        
+        # Store specific heat (if field exists)
+        if hasattr(self.field, 'cp'):
+            self.field.cp = np.ones(n_cells) * specific_heat
+        
+        # Initialize turbulence if model is active
+        if self.turbulence is not None:
+            u_ref = max(np.max(np.abs(self.field.u)), 0.1)
+            length_scale = min(self.mesh.x_max - self.mesh.x_min,
+                              self.mesh.y_max - self.mesh.y_min) * 0.1
+            
+            self.turbulence.initialize_from_intensity(
+                turbulence_intensity=self.settings.turbulence_intensity,
+                length_scale=length_scale,
+                u_ref=u_ref,
+                rho=self.field.rho
+            )
         
     def interpolate_to_face(self, 
                             face: Face,
