@@ -133,8 +133,8 @@ class MeshConfig:
 @dataclass
 class SolverConfig:
     """Solver configuration"""
-    max_iterations: int = 1000
-    convergence_tolerance: float = 1e-6
+    max_iterations: int = 200  # Reduced from 1000 for faster GUI response
+    convergence_tolerance: float = 1e-5  # Relaxed from 1e-6 for faster convergence
     relaxation_factor: float = 0.7
     time_step: Optional[float] = None
     enable_turbulence: bool = False
@@ -661,10 +661,11 @@ class BKPSNanofluidEngine:
         if progress_callback:
             progress_callback(20)
         
-        # Solve using SIMPLE algorithm
-        logger.info("Running SIMPLE algorithm for coupled Navier-Stokes equations...")
+        # Solve using SIMPLE algorithm with reduced iterations for faster response
+        max_iter = min(self.config.solver.max_iterations, 200)  # Cap at 200 for GUI responsiveness
+        logger.info(f"Running SIMPLE algorithm (max {max_iter} iterations)...")
         converged = self._cfd_solver.solve(
-            max_iterations=self.config.solver.max_iterations,
+            max_iterations=max_iter,
             verbose=True
         )
         
