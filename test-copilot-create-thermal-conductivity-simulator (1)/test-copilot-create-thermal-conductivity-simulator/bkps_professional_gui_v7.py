@@ -462,7 +462,7 @@ class BKPSProfessionalGUI_V7(QMainWindow):
         np_layout.addRow("Diameter:", self.diameter_spin)
         
         self.shape_combo = QComboBox()
-        self.shape_combo.addItems(["spherical", "cylindrical", "platelet"])
+        self.shape_combo.addItems(["sphere", "cylinder", "platelet", "tube"])
         np_layout.addRow("Shape:", self.shape_combo)
         
         np_group.setLayout(np_layout)
