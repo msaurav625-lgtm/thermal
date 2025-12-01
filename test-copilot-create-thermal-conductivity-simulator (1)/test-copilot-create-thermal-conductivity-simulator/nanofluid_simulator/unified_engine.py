@@ -552,8 +552,17 @@ class BKPSNanofluidEngine:
         # Calculate stability (DLVO)
         if self.config.enable_dlvo:
             try:
-                results['dlvo_potential'] = self._simulator.calculate_dlvo_interaction()
-            except:
+                dlvo_analysis = self._simulator.perform_dlvo_analysis()
+                if dlvo_analysis:
+                    # Store key DLVO metrics
+                    results['dlvo_potential'] = dlvo_analysis.get('zeta_potential', None)
+                    results['dlvo_barrier'] = dlvo_analysis.get('energy_barrier', None)
+                    results['stability_ratio'] = dlvo_analysis.get('stability_ratio', None)
+                    results['stability_status'] = dlvo_analysis.get('stability_status', None)
+                else:
+                    results['dlvo_potential'] = None
+            except Exception as e:
+                logger.warning(f"DLVO analysis failed: {e}")
                 results['dlvo_potential'] = None
         
         if progress_callback:
