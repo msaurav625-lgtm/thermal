@@ -474,7 +474,7 @@ class NavierStokesSolver:
         
         # Use iterative solver with maximum iterations to prevent hanging
         try:
-            u_new, info = sparse.linalg.cg(A_u_csr, b_u, x0=self.field.u, maxiter=100, atol=1e-6)
+            u_new, info = sparse.linalg.cg(A_u_csr, b_u, x0=self.field.u, maxiter=50, atol=1e-5)
             if info != 0:
                 # Fallback to direct solver if iterative fails
                 u_new = sparse.linalg.spsolve(A_u_csr, b_u)
@@ -491,7 +491,7 @@ class NavierStokesSolver:
         A_v_csr = A_v.tocsr()
         
         try:
-            v_new, info = sparse.linalg.cg(A_v_csr, b_v, x0=self.field.v, maxiter=100, atol=1e-6)
+            v_new, info = sparse.linalg.cg(A_v_csr, b_v, x0=self.field.v, maxiter=50, atol=1e-5)
             if info != 0:
                 v_new = sparse.linalg.spsolve(A_v_csr, b_v)
         except:
@@ -665,6 +665,10 @@ class NavierStokesSolver:
             print()
         
         for iteration in range(max_iterations):
+            # Debug: print iteration start
+            if verbose and iteration == 0:
+                print("Starting iteration 0...")
+            
             # Update progress every 5 iterations
             if progress_callback and iteration % 5 == 0:
                 progress = 15 + int(70 * iteration / max_iterations)  # 15% to 85%
@@ -673,7 +677,12 @@ class NavierStokesSolver:
             # SIMPLE algorithm steps
             
             # 1. Solve momentum equations
-            res_u, res_v = self.solve_momentum_step()
+            try:
+                res_u, res_v = self.solve_momentum_step()
+            except Exception as e:
+                if verbose:
+                    print(f"ERROR in momentum step: {e}")
+                return False
             
             # 2. Solve pressure correction (continuity)
             res_continuity = self.solve_pressure_correction()
