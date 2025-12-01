@@ -260,12 +260,12 @@ class BKPSNanofluidSimulator:
             # Hamilton-Crosser for non-spherical particles
             if comp.shape == 'sphere':
                 n = 3.0  # Sphericity
-            elif comp.shape == 'rod' or comp.shape == 'tube':
+            elif comp.shape in ['rod', 'cylinder', 'tube']:
                 n = 6.0  # Cylindrical
-            elif comp.shape == 'sheet':
+            elif comp.shape in ['sheet', 'platelet']:
                 n = 8.0  # Platelet
             else:
-                n = 3.0
+                n = 3.0  # Default to sphere
             
             # Hamilton-Crosser model
             k_eff = k_eff * (k_p + (n-1)*k_eff + (n-1)*phi*(k_p - k_eff)) / \
