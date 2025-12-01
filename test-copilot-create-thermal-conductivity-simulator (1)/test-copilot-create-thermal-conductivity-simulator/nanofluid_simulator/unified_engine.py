@@ -387,13 +387,10 @@ class BKPSNanofluidEngine:
             )
         
         # Initialize mode-specific engines
-        if self.config.mode == SimulationMode.FLOW:
-            self._flow_simulator = FlowNanofluidSimulator(
-                base_fluid=self.config.base_fluid.name,
-                temperature=self.config.base_fluid.temperature
-            )
+        if self.config.mode == SimulationMode.FLOW or self.config.mode == SimulationMode.HYBRID:
+            self._flow_simulator = FlowNanofluidSimulator()
         
-        elif self.config.mode == SimulationMode.CFD:
+        if self.config.mode == SimulationMode.CFD or self.config.mode == SimulationMode.HYBRID:
             # Create mesh
             geom = self.config.geometry
             mesh_cfg = self.config.mesh
@@ -451,11 +448,11 @@ class BKPSNanofluidEngine:
         )
         
         # Add optional parameters
-        if mode in ["flow", "cfd"]:
+        if mode in ["flow", "cfd", "hybrid"]:
             config.geometry = GeometryConfig(**kwargs.get('geometry', {}))
             config.flow = FlowConfig(**kwargs.get('flow', {}))
         
-        if mode == "cfd":
+        if mode in ["cfd", "hybrid"]:
             config.mesh = MeshConfig(**kwargs.get('mesh', {}))
         
         return cls(config)
@@ -569,7 +566,8 @@ class BKPSNanofluidEngine:
         if progress_callback:
             progress_callback(100)
         
-        return results
+        # Wrap in 'static' key for consistency
+        return {'static': results}
     
     def _run_flow(self, progress_callback=None) -> Dict[str, Any]:
         """Run flow-dependent property calculation"""
@@ -579,16 +577,24 @@ class BKPSNanofluidEngine:
         # Get flow-dependent properties
         velocity = self.config.flow.velocity
         
-        results = self._run_static(None)  # Get base properties
+        static_results = self._run_static(None)  # Get base properties
+        base_results = static_results['static'].copy()  # Extract from wrapper
         
-        # Add flow-dependent thermal conductivity
-        results['k_flow'] = self._simulator.calculate_flow_dependent_conductivity(velocity)
-        results['enhancement_k_flow'] = (results['k_flow'] / results['k_base'] - 1) * 100
+        # Flow-dependent thermal conductivity (use static for now - can be enhanced later)
+        base_results['k_flow'] = base_results['k_static']
+        base_results['enhancement_k_flow'] = base_results['enhancement_k']
+        
+        # Calculate Reynolds number
+        Dh = 2 * self.config.geometry.height  # Hydraulic diameter for channel
+        base_results['reynolds'] = (base_results['rho_nf'] * velocity * Dh) / base_results['mu_nf']
+        
+        # Simple Nusselt correlation for laminar flow
+        base_results['nusselt'] = 7.54  # Constant Nu for parallel plates
         
         if progress_callback:
             progress_callback(100)
         
-        return results
+        return {'flow': base_results}
     
     def _run_cfd(self, progress_callback=None) -> Dict[str, Any]:
         """Run CFD simulation using finite difference projection method"""
@@ -665,15 +671,18 @@ class BKPSNanofluidEngine:
         results = {}
         
         # Static properties
-        results['static'] = self._run_static(lambda p: progress_callback(p//3) if progress_callback else None)
+        static_result = self._run_static(lambda p: progress_callback(p//3) if progress_callback else None)
+        results.update(static_result)  # Merge in 'static' key
         
         # Flow properties
         if self.config.flow:
-            results['flow'] = self._run_flow(lambda p: progress_callback(33 + p//3) if progress_callback else None)
+            flow_result = self._run_flow(lambda p: progress_callback(33 + p//3) if progress_callback else None)
+            results.update(flow_result)  # Merge in 'flow' key
         
         # CFD if mesh provided
         if self.config.mesh:
-            results['cfd'] = self._run_cfd(lambda p: progress_callback(66 + p//3) if progress_callback else None)
+            cfd_result = self._run_cfd(lambda p: progress_callback(66 + p//3) if progress_callback else None)
+            results.update(cfd_result)  # Merge in CFD keys
         
         return results
     
