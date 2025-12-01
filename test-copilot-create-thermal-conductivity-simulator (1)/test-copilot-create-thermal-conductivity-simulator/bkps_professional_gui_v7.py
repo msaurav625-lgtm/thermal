@@ -1355,20 +1355,30 @@ class BKPSProfessionalGUI_V7(QMainWindow):
         if not self.results:
             return
         
-        self.viz_figure.clear()
-        
-        plot_type = self.plot_type_combo.currentText()
-        
-        if plot_type == "Enhancement vs φ":
-            self._plot_enhancement()
-        elif plot_type == "Viscosity Comparison":
-            self._plot_viscosity()
-        elif plot_type == "Property Summary":
-            self._plot_summary()
-        elif plot_type == "3D Surface":
-            self._plot_3d_surface()
-        
-        self.viz_canvas.draw()
+        try:
+            self.viz_figure.clear()
+            
+            plot_type = self.plot_type_combo.currentText()
+            
+            if plot_type == "Enhancement vs φ":
+                self._plot_enhancement()
+            elif plot_type == "Viscosity Comparison":
+                self._plot_viscosity()
+            elif plot_type == "Property Summary":
+                self._plot_summary()
+            elif plot_type == "3D Surface":
+                self._plot_3d_surface()
+            
+            self.viz_canvas.draw()
+        except Exception as e:
+            self._log(f"Visualization error: {e}")
+            # Don't show error dialog, just log it
+            # Create a simple message on the plot instead
+            ax = self.viz_figure.add_subplot(111)
+            ax.text(0.5, 0.5, f"Visualization unavailable\nRun simulation first", 
+                   ha='center', va='center', fontsize=12, transform=ax.transAxes)
+            ax.axis('off')
+            self.viz_canvas.draw()
     
     def _plot_enhancement(self):
         """Plot enhancement bar chart"""
