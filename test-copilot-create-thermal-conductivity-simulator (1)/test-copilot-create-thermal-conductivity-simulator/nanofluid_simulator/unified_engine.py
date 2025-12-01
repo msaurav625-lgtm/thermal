@@ -590,11 +590,14 @@ class BKPSNanofluidEngine:
         return results
     
     def _run_cfd(self, progress_callback=None) -> Dict[str, Any]:
-        """Run CFD simulation with simplified analytical model"""
-        logger.info("=== Running CFD Simulation (Analytical Model) ===")
+        """Run full CFD simulation with SIMPLE algorithm"""
+        logger.info("=== Running CFD Simulation (SIMPLE Algorithm) ===")
+        
+        if not self._cfd_solver:
+            raise RuntimeError("CFD solver not initialized")
         
         if progress_callback:
-            progress_callback(10)
+            progress_callback(5)
         
         # Get nanofluid properties using correct method names
         mu_result = self._simulator.calculate_viscosity()
@@ -615,10 +618,17 @@ class BKPSNanofluidEngine:
         cp_nf = (phi_total * rho_p * cp_p + (1 - phi_total) * rho_bf * cp_bf) / rho_nf
         
         if progress_callback:
-            progress_callback(30)
+            progress_callback(10)
+        
+        # Set properties in solver
+        self._cfd_solver.set_fluid_properties(
+            viscosity=mu_nf,
+            density=rho_nf,
+            thermal_conductivity=k_nf,
+            specific_heat=cp_nf
+        )
         
         # Get geometry and flow parameters
-        geom = self.config.geometry
         inlet_velocity = self.config.flow.velocity if self.config.flow else 1.0
         
         if self.config.flow and hasattr(self.config.flow, 'inlet_temperature'):
@@ -626,90 +636,75 @@ class BKPSNanofluidEngine:
         else:
             inlet_temp = self.config.base_fluid.temperature
         
-        # Mesh dimensions
-        nx = self.config.mesh.nx if self.config.mesh else 50
-        ny = self.config.mesh.ny if self.config.mesh else 50
+        # Initialize field with reasonable guess
+        self._cfd_solver.initialize_field(
+            u0=inlet_velocity * 0.5,  # Start with half inlet velocity
+            v0=0.0,
+            p0=0.0,
+            T0=inlet_temp
+        )
         
-        # Create coordinate arrays
-        x = np.linspace(0, geom.length, nx)
-        y = np.linspace(0, geom.height, ny)
-        X, Y = np.meshgrid(x, y, indexing='ij')
+        # Set boundary conditions
+        from nanofluid_simulator.cfd_solver import BoundaryType, BoundaryCondition
+        
+        self._cfd_solver.set_boundary_condition(
+            BoundaryType.INLET,
+            BoundaryCondition(
+                bc_type=BoundaryType.INLET,
+                velocity=(inlet_velocity, 0.0),
+                temperature=inlet_temp
+            )
+        )
+        
+        self._cfd_solver.set_boundary_condition(
+            BoundaryType.OUTLET,
+            BoundaryCondition(
+                bc_type=BoundaryType.OUTLET,
+                pressure=0.0
+            )
+        )
+        
+        self._cfd_solver.set_boundary_condition(
+            BoundaryType.WALL,
+            BoundaryCondition(
+                bc_type=BoundaryType.WALL,
+                velocity=(0.0, 0.0)
+            )
+        )
         
         if progress_callback:
-            progress_callback(50)
+            progress_callback(15)
         
-        # Analytical solution for laminar channel flow (Poiseuille flow)
-        # u(y) = u_max * (1 - (2y/H - 1)^2) for channel
-        y_normalized = 2 * Y / geom.height - 1  # Normalize to [-1, 1]
-        u_max = 1.5 * inlet_velocity  # For parabolic profile
+        # Solve using SIMPLE algorithm with reduced iterations
+        max_iter = min(self.config.solver.max_iterations, 50)  # Limit to 50 for speed
+        logger.info(f"Running SIMPLE algorithm (max {max_iter} iterations)...")
         
-        velocity_u = u_max * (1 - y_normalized**2)
-        velocity_v = np.zeros_like(velocity_u)  # No cross-flow for fully developed
-        
-        # Pressure drop (Hagen-Poiseuille)
-        Re = rho_nf * inlet_velocity * geom.height / mu_nf
-        f = 96 / Re  # Friction factor for laminar channel flow
-        dp_dx = -f * rho_nf * inlet_velocity**2 / (2 * geom.height)
-        pressure = -dp_dx * (geom.length - X)  # Linear pressure drop
-        
-        if progress_callback:
-            progress_callback(70)
-        
-        # Temperature field (simplified thermal development)
-        # Assume linear temperature rise due to viscous dissipation
-        T_wall = inlet_temp + 5.0  # 5K temperature rise at wall
-        temperature = inlet_temp + (T_wall - inlet_temp) * (1 - (1 - y_normalized**2))
+        converged = self._cfd_solver.solve(
+            max_iterations=max_iter,
+            verbose=True
+        )
         
         if progress_callback:
             progress_callback(90)
         
-        # Calculate performance metrics
-        avg_velocity = np.mean(velocity_u)
-        max_velocity = np.max(velocity_u)
-        pressure_drop = np.max(pressure) - np.min(pressure)
-        avg_temp = np.mean(temperature)
-        
-        # Heat transfer coefficient (simplified Nusselt correlation)
-        Nu = 4.86  # Constant for fully developed laminar flow in channel
-        h = Nu * k_nf / geom.height
+        # Get converged results
+        flow_field = self._cfd_solver.get_results()
         
         if progress_callback:
             progress_callback(100)
         
-        logger.info(f"  Reynolds number: {Re:.1f}")
-        logger.info(f"  Pressure drop: {pressure_drop:.2f} Pa")
-        logger.info(f"  Max velocity: {max_velocity:.4f} m/s")
-        logger.info(f"  Heat transfer coefficient: {h:.1f} W/m²·K")
+        logger.info(f"  Converged: {converged}")
+        logger.info(f"  Max velocity: {np.max(flow_field.u):.4f} m/s")
+        logger.info(f"  Pressure drop: {np.max(flow_field.p) - np.min(flow_field.p):.2f} Pa")
         
         results = {
-            'converged': True,
-            'velocity_u': velocity_u,
-            'velocity_v': velocity_v,
-            'pressure': pressure,
-            'temperature': temperature,
-            'mesh': {
-                'x': x,
-                'y': y,
-                'X': X,
-                'Y': Y,
-                'nx': nx,
-                'ny': ny
-            },
-            'metrics': {
-                'reynolds_number': Re,
-                'pressure_drop': pressure_drop,
-                'avg_velocity': avg_velocity,
-                'max_velocity': max_velocity,
-                'avg_temperature': avg_temp,
-                'heat_transfer_coefficient': h,
-                'nusselt_number': Nu
-            },
-            'residuals': {
-                'u': [1e-7],  # Analytical solution - effectively zero residual
-                'v': [1e-7],
-                'continuity': [1e-7],
-                'T': [1e-7]
-            },
+            'converged': converged,
+            'velocity_u': flow_field.u,
+            'velocity_v': flow_field.v,
+            'pressure': flow_field.p,
+            'temperature': flow_field.T,
+            'mesh': self._cfd_solver.mesh,
+            'residuals': self._cfd_solver.residuals,
             'properties': {
                 'mu_nf': mu_nf,
                 'rho_nf': rho_nf,

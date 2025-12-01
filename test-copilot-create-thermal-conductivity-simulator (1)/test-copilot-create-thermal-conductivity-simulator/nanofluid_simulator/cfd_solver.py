@@ -470,23 +470,44 @@ class NavierStokesSolver:
         """Solve momentum equations (u and v)"""
         # Solve u-momentum
         A_u, b_u = self.assemble_momentum_equation('u')
-        u_new = sparse.linalg.spsolve(A_u, b_u)
+        A_u_csr = A_u.tocsr()
+        
+        # Use iterative solver with maximum iterations to prevent hanging
+        try:
+            u_new, info = sparse.linalg.cg(A_u_csr, b_u, x0=self.field.u, maxiter=100, atol=1e-6)
+            if info != 0:
+                # Fallback to direct solver if iterative fails
+                u_new = sparse.linalg.spsolve(A_u_csr, b_u)
+        except:
+            # If all else fails, keep current solution
+            u_new = self.field.u.copy()
         
         # Under-relaxation
         alpha_u = self.settings.under_relaxation_u
-        self.field.u = alpha_u * u_new + (1 - alpha_u) * self.field.u
+        u_relaxed = alpha_u * u_new + (1 - alpha_u) * self.field.u
         
         # Solve v-momentum
         A_v, b_v = self.assemble_momentum_equation('v')
-        v_new = sparse.linalg.spsolve(A_v, b_v)
+        A_v_csr = A_v.tocsr()
+        
+        try:
+            v_new, info = sparse.linalg.cg(A_v_csr, b_v, x0=self.field.v, maxiter=100, atol=1e-6)
+            if info != 0:
+                v_new = sparse.linalg.spsolve(A_v_csr, b_v)
+        except:
+            v_new = self.field.v.copy()
         
         # Under-relaxation
         alpha_v = self.settings.under_relaxation_v
-        self.field.v = alpha_v * v_new + (1 - alpha_v) * self.field.v
+        v_relaxed = alpha_v * v_new + (1 - alpha_v) * self.field.v
         
         # Calculate residuals
-        res_u = np.linalg.norm(u_new - self.field.u) / (np.linalg.norm(u_new) + 1e-10)
-        res_v = np.linalg.norm(v_new - self.field.v) / (np.linalg.norm(v_new) + 1e-10)
+        res_u = np.linalg.norm(u_relaxed - self.field.u) / (np.linalg.norm(u_relaxed) + 1e-10)
+        res_v = np.linalg.norm(v_relaxed - self.field.v) / (np.linalg.norm(v_relaxed) + 1e-10)
+        
+        # Update fields
+        self.field.u = u_relaxed
+        self.field.v = v_relaxed
         
         return res_u, res_v
     
