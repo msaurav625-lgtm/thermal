@@ -625,11 +625,13 @@ class BKPSNanofluidEngine:
         
         # Inlet velocity (left boundary)
         inlet_velocity = self.config.flow.velocity if self.config.flow else 1.0
+        inlet_temp = self.config.static.temperature if self.config.static else 300.0
         self._cfd_solver.set_boundary_condition(
             BoundaryType.INLET,
             BoundaryCondition(
-                bc_type='dirichlet',
-                value={'u': inlet_velocity, 'v': 0.0}
+                bc_type=BoundaryType.INLET,
+                velocity=(inlet_velocity, 0.0),
+                temperature=inlet_temp
             )
         )
         
@@ -637,17 +639,17 @@ class BKPSNanofluidEngine:
         self._cfd_solver.set_boundary_condition(
             BoundaryType.OUTLET,
             BoundaryCondition(
-                bc_type='neumann',
-                value={'u': 0.0, 'v': 0.0, 'p': 0.0}
+                bc_type=BoundaryType.OUTLET,
+                pressure=0.0
             )
         )
         
-        # Wall boundaries (top/bottom)
+        # Wall boundaries (top/bottom) - no-slip, adiabatic
         self._cfd_solver.set_boundary_condition(
             BoundaryType.WALL,
             BoundaryCondition(
-                bc_type='no_slip',
-                value={'u': 0.0, 'v': 0.0}
+                bc_type=BoundaryType.WALL,
+                velocity=(0.0, 0.0)
             )
         )
         
